@@ -2,6 +2,7 @@ import warnings
 import musicbrainzngs
 import argparse
 import json
+import subprocess
 
 from pathlib import Path
 from pprint import pprint as pprint
@@ -10,7 +11,7 @@ from tqdm import tqdm
 
 CONF_PATH = Path("./config")
 DEFAULT_CONF = CONF_PATH.joinpath("coverart_default.json")
-LIMIT = 100
+LIMIT = 5
 ERROR = "HTTP Error 404: NOT FOUND"
 
 
@@ -183,6 +184,30 @@ def clean_releases_list(releases: list, types: list) -> list:
     return clean_releases
 
 
+def build_aria_file(releases, file_n, config):
+    dataset_path = Path(config['dataset_path'])
+    Path.mkdir(dataset_path, exist_ok=True)
+    filepath = f'dl-{file_n}.txt'
+    print(f'saving to {filepath}.txt')
+    with open(filepath, 'w') as f:
+        for rel in releases:
+            for release, urls in rel.items():
+                print(release)
+                print(urls)
+                artist, album = release.split('_-_')
+                artist_folder = dataset_path.joinpath(artist)
+                if not artist_folder.exists():
+                    Path.mkdir(artist_folder, exist_ok=True)
+                release_folder = artist_folder.joinpath(release)
+                if not release_folder.exists():
+                    Path.mkdir(release_folder, exist_ok=True)
+                # urls = releases[release]
+                for url in urls:
+                    f.write(f'{url}\n dir={release_folder}\n')
+
+    return filepath
+
+
 def save_releases_list(releases, clean=False, bad=False):
 
     filename = 'full_releases.json'
@@ -205,15 +230,28 @@ def load_release_list(file):
     return releases
 
 
-def download_releases(release_list, config):
+def download_releases(filepath):
+    cmd = rf'c:\Portable_Programs\aria2\aria2c.exe -i {filepath} -x2 -j2'
 
+    p1 = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+
+    msg_content = ''
+    for line in p1.stdout:
+        print(line)
+        l = line.decode(encoding="utf-8", errors="ignore")
+        msg_content += l
+    p1.wait()
+    print(msg_content)
     return
 
 
-def build_dl_list(clean_releases, max_dl) -> list:
+def build_dl_list(clean_releases,start, max_dl) -> list:
     dl_list = []
-    for dl in range(max_dl):
-        print(f'{dl} - {max_dl}')
+    stop = start + max_dl
+    if stop > len(clean_releases)-1:
+        stop = len(clean_releases)-1
+    for dl in range(start, stop):
+        print(f'{dl} - {stop}')
         i = clean_releases[dl]
         release_folder = f'{i["artist"]}_-_{i["title"]}'
         release_images = []
@@ -288,8 +326,16 @@ def main():
         file = 'clean_releases.json'
         release_list = load_release_list(file)
         max_dl = args.max
-        releases_to_download = build_dl_list(release_list, max_dl)
-        download_releases(release_list, config)
+        total_releases_to_download = len(release_list)
+        # print(f'release_list = {total_releases_to_download} items')
+        # print(f'max dl per aria file = {max_dl}')
+        num_of_aria_files = total_releases_to_download // max_dl + 1
+        # print(f'steps: {num_of_aria_files} X {max_dl} = {max_dl * num_of_aria_files}')
+        for file_num in range(num_of_aria_files):
+            start = file_num * max_dl
+            releases_to_download = build_dl_list(release_list, start, max_dl)
+            aria_file = build_aria_file(releases_to_download, file_num, config)
+            download_releases(aria_file)
     else:
         console.log('Invalid mode selected, exiting')
         raise SystemExit
