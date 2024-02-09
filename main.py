@@ -11,6 +11,7 @@ from tqdm import tqdm
 CONF_PATH = Path("./config")
 DEFAULT_CONF = CONF_PATH.joinpath("coverart_default.json")
 LIMIT = 100
+ERROR = "HTTP Error 404: NOT FOUND"
 
 
 def setup_api() -> None:
@@ -124,6 +125,7 @@ def get_releases(config: dict) -> list:
 
 def clean_releases_list(releases: list, types: list) -> list:
     clean_releases = []
+    bad_releases = []
     error = False
     rel_type = 'none'
 
@@ -175,21 +177,69 @@ def clean_releases_list(releases: list, types: list) -> list:
 
             clean_releases.append(clean_rel)
         else:
-            print(f'{artist} - {title} : refused')
+            bad_releases.append(rel)
 
+    save_releases_list(bad_releases, bad=True)
     return clean_releases
 
 
-def save_releases_list(releases, clean=False):
+def save_releases_list(releases, clean=False, bad=False):
 
+    filename = 'full_releases.json'
+    if bad:
+        filename = 'bad_releases.json'
     if clean:
-        with open("releases_clean.json", "w") as f:
-            json.dump(releases, f, indent=2)
-    elif not clean:
-        with open("releases.json", "w") as f:
-            json.dump(releases, f, indent=2)
+        filename = 'clean_releases.json'
+
+    with open(filename, "w") as f:
+        json.dump(releases, f, indent=2)
 
     return
+
+
+def load_release_list(file):
+
+    with open(file, 'r') as f:
+        releases = json.load(f)
+
+    return releases
+
+
+def download_releases(release_list, config):
+
+    return
+
+
+def build_dl_list(clean_releases, max_dl) -> list:
+    dl_list = []
+    for dl in range(max_dl):
+        print(f'{dl} - {max_dl}')
+        i = clean_releases[dl]
+        release_folder = f'{i["artist"]}_-_{i["title"]}'
+        release_images = []
+        for r in i['releases']:
+            index = i['releases'].index(r)
+            print(index)
+            try:
+                release = musicbrainzngs.get_image_list(r)
+                images = release['images']
+                covers = []
+                for img in images:
+                    # covers = []
+                    types = img['types']
+                    if "Medium" not in types and "Tray" not in types and "Booklet" not in types:
+                        covers.append(img['image'])
+                for cover in covers:
+                    release_images.append(cover)
+            except musicbrainzngs.ResponseError as ex:
+                # release_images.append({'error': str(ex.cause)})
+                pass
+            # release_images['release_folder'] = release_folder
+        dl_list.append({release_folder: release_images})
+
+    with open('dl_list_images_images_covers_img_image.json', 'w') as f:
+        json.dump(dl_list, f, indent=2)
+    return dl_list
 
 
 def main():
@@ -228,12 +278,18 @@ def main():
     if mode == 'scrape':
         console.print(f'Looking for releases tagged {config["tag"]}')
         releases = get_releases(config=config)
-        save_releases_list(releases)
+        # save_releases_list(releases)
         clean_releases = clean_releases_list(releases, config['release_types'])
         print(f'clean release listr contains {len(clean_releases)} releases')
         save_releases_list(clean_releases, clean=True)
+
     elif mode == 'dl':
         console.print(f'Downloading releases tagged {config["tag"]}')
+        file = 'clean_releases.json'
+        release_list = load_release_list(file)
+        max_dl = args.max
+        releases_to_download = build_dl_list(release_list, max_dl)
+        download_releases(release_list, config)
     else:
         console.log('Invalid mode selected, exiting')
         raise SystemExit
